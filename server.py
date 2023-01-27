@@ -86,6 +86,6 @@ if __name__ == "__main__":
         # Create the server, binding to localhost on port 8080
 
     web_server = socketserver.TCPServer((ADDR, PORT_NUM), CustomWebServer)
-    # Activate the server; this will keep running until you
+    # Activate the server; this will keep running until you r
     # interrupt the program with Ctrl-C
     web_server.serve_forever()
