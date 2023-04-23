@@ -1,7 +1,8 @@
 #  coding: utf-8 
-from sys import path
-import socketserver
+
 import os
+import socketserver
+
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos, Smit Patel
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,86 +29,63 @@ import os
 # try: curl -v -X GET http://127.0.0.1:8080/
 
 
-class MyWebServer(socketserver.BaseRequestHandler):
-    
-    def handle(self):
-        self.data = self.request.recv(1024).strip()
-        self.data = self.data.decode("utf-8")
-        self.data = self.data.split(" ")
-        if self.data[0] == 'GET':
-            self.return_method()
+
+class CustomWebServer(socketserver.BaseRequestHandler):
+    def init(self):
+        self.file_paths = []
+        self.folder_paths = []
+        for root, dirs, files in os.walk("www"):
+            for file in files:
+                self.file_paths.append(os.path.join(root, file)[3:])
+            for folder in dirs:
+                self.folder_paths.append(os.path.join(root, folder)[3:])
+
+    def process_request(self):
+        request_data = self.request.recv(1024).strip()
+        print(f"Received request: {request_data}\n")
+        tokens = str(request_data).split()
+        if tokens[0] != "b'GET":
+            response = b'HTTP/1.1 405 Method Not Allowed\r\n'
+            b'Connection: close\r\n'
         else:
-            self.request.sendall(bytearray("HTTP/1.1 405 Method Not Allowed\r\n", 'utf-8'))
+            requested_path = tokens[1]
+            if requested_path[-1] == "/":
+                requested_path += "index.html"
+            if requested_path not in self.file_paths:
+                if requested_path not in self.folder_paths:
+                    response = b'HTTP/1.1 404 Not Found\r\n'
+                    b'Connection: close\r\n'
+                else:
+                    response = b'HTTP/1.1 301 Moved Permanently\r\n'
+                    response += b'Location: http://127.0.0.1:8080' + bytes(requested_path, 'utf-8') + b'/\r\n'
+            else:
+                file_ext = requested_path.split(".")[-1]
+                if file_ext == "css":
+                    response = b'HTTP/1.1 200 OK\r\n'
+                    response += b'Content-Type: text/css; charset=utf-8\r\n'
+                    response += b'\r\n'
+                elif file_ext == "html":
+                    response = b'HTTP/1.1 200 OK\r\n'
+                    response += b'Content-Type: text/html; charset=utf-8\r\n'
+                    response += b'\r\n'
+                else:
+                    response = b'HTTP/1.1 200 OK\r\n'
+                    response += b'Content-Type: application/octet-stream; charset=utf-8\r\n'
+                    response += b'\r\n'
+                with open("www" + requested_path, 'rb') as f:
+                    response += f.read()
+        self.request.sendall(response)
 
-    def return_method(self):
-        data_ = self.data[1]
-
-        # check if path ends with '/'
-        if not data_.endswith('/'):
-            # redirect to correct path
-            self.redirect_path(data_)
-            return
-
-        # check file extension
-        ext = self.get_file_extension(data_)
-        content_type = self.get_content_type(ext)
-        if content_type is None:
-            self.send_404()
-            return
-
-        # send file
-        self.send_file(data_, content_type)
-    
-    def redirect_path(self, path):
-        location = path + '/'
-        message = "HTTP/1.1 301 Moved Permanently\r\n" + "Location: " + location + "\r\n"
-        self.request.sendall(bytearray(message, 'utf-8'))
-
-    def get_file_extension(self, path):
-        ext = path.split('.')[-1]
-        return ext
-    
-    def get_content_type(self, ext):
-        content_types = {
-            'html': 'text/html',
-            'css': 'text/css',
-        }
-        return content_types.get(ext)
-    
-
-    def send_file(self, path, content_type):
-        try:
-            # read file
-            with open(path, 'r') as f:
-                content = f.read()
-
-            # send headers
-            headers = "HTTP/1.1 200 OK\n" + "Content-Type: " + content_type + "\n" + "Content-Length: " + str(len(content)) + "\r\n\r\n"
-            self.request.send(headers.encode())
-
-            # send content
-            self.request.send(content.encode())
-        except FileNotFoundError:
-            self.send_404()
-        except PermissionError:
-            self.send_403()
-        
-    def send_404(self):
-        message = "HTTP/1.1 404 Not Found\r\n"
-        self.request.sendall(bytearray(message, 'utf-8'))
-
-    def send_403(self):
-        message = "HTTP/1.1 403 Forbidden\r\n"
-        self.request.sendall(bytearray(message, 'utf-8'))
-            
+    def handle(self):
+        self.process_request()
 
 if __name__ == "__main__":
-    HOST, PORT = "localhost", 8080
+    ADDR, PORT_NUM = "localhost", 8080
 
     socketserver.TCPServer.allow_reuse_address = True
-    # Create the server, binding to localhost on port 8080
-    server = socketserver.TCPServer((HOST, PORT), MyWebServer)
+        # Create the server, binding to localhost on port 8080
 
+    web_server = socketserver.TCPServer((ADDR, PORT_NUM), CustomWebServer)
     # Activate the server; this will keep running until you
     # interrupt the program with Ctrl-C
-    server.serve_forever()
+    web_server.serve_forever()
